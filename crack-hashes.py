@@ -91,12 +91,13 @@ def animate(mpa_hash_per_sec, mpa_done, mpv_hashes_found_list,
                 wl_perc_str = (wl_perc_str +
                                "{:.1f}".format(perc_done) + "% ")
 
-        hashes_percent = len(mpv_hashes_found_list)*100/hashes_count
+        hashes_percent = "{:.1f}".format(len(mpv_hashes_found_list) *
+                                         100/hashes_count)
 
         sys.stdout.write('\r' + c + " F:" +
                          str(len(mpv_hashes_found_list)) + "/" +
                          str(hashes_count) + " " +
-                         str(hashes_percent) + "% " +
+                         hashes_percent + "% " +
                          hash_per_sec_str +
                          wl_perc_str)
         sys.stdout.flush()
