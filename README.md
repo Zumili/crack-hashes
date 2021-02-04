@@ -85,7 +85,7 @@ If you remember some parts of the plain you can include it into the mask
 Cracking one single sha1 with a wordlist.  
 `python crack-hashes.py -m sha1 -a 0 ebe53c61982711f13af8bbc09844e4e2849268ba wordlist-1K.txt`  
 
-Or crack a list of salted sha1 hashes with a wordlist with no output [-n] except the found hashes 
+Or crack a list of salted sha1 hashes with a wordlist with no output [-n] except the found hashes  
 `python crack-hashes.py -m sha1 -a 0 -n hashes-sha1-salt.txt wordlist-1K.txt`  
 
 #### Excluding characters
