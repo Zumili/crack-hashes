@@ -38,6 +38,7 @@ Don't use this tool for illegal activities!  (⋗_⋖)
  -n, --no-info       |      | print only found hash:[salt:]candidate pair
  -e, --exampes       |      | print some examples
  -o, --output-file   | Str  | output file to store found hashes
+ -b, --benchmark     |      | benchmark to test performance of hash types
 ```
 
 
