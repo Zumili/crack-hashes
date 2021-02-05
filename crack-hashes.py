@@ -156,7 +156,7 @@ def simple_bench():
     try:
         for hash_type in tmp_list:
             start_time = time.time()
-            for i in range(200000):
+            for i in range(100000):
                 if(hash_type != "shake_128" and hash_type != "shake_256"):
                     act_hash_hex = hashlib.new(hash_type,
                                                "ehthncgacialik"
@@ -168,7 +168,7 @@ def simple_bench():
 
             elapsed_time_fl = (time.time() - start_time)
 
-            kilo_hash_per_sec = (2e5/elapsed_time_fl) / (1000*overspeed)
+            kilo_hash_per_sec = (1e5/elapsed_time_fl) / (1000*overspeed)
             giga_hash_per_sec = kilo_hash_per_sec / 11.2
             print(" {:<12}".format(hash_type) +
                   ("|  {:.1f} ".format(kilo_hash_per_sec)) +
