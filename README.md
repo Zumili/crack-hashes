@@ -1,5 +1,8 @@
 # crack-hashes
 A CPU-based tool to crack salted and unsalted hashes like MD5, SHA1, SHA256 and more in python > 3.6.  
+It is quite fast for unsalted hash-lists! For salted hash-lists not very much...  
+If there is just one salted hash in an unsalted hash-list, it uses a much slower cracking methode!!  
+
 This tool is for legal use only! (◔/‿\◔)  
 Don't use this tool for illegal activities!  (⋗_⋖)
 
