@@ -82,14 +82,14 @@ def animate(mpa_hash_per_sec, mpa_done, mpv_hashes_found_list,
         if done or all(mpa_done):
             break
 
-        if mpa_hash_per_sec[0] > 1000000000:
+        if mpa_hash_per_sec[0] > 1e9:
             hash_per_sec_str = "MH/s: "
         else:
             hash_per_sec_str = "KH/s: "
         wl_perc_str = ""
         for i in range(len(mpa_hash_per_sec)):
-            if mpa_hash_per_sec[i] > 1000000000:
-                khps = mpa_hash_per_sec[i]/1000000
+            if mpa_hash_per_sec[i] > 1e9:
+                khps = mpa_hash_per_sec[i]/1e6
             else:
                 khps = mpa_hash_per_sec[i]/1000
             hash_per_sec_str = (hash_per_sec_str +
@@ -137,6 +137,45 @@ def calc_count_val(lst):
         count_val = int(magic/(salts_count/8))
 
     return count_val
+
+
+def simple_bench():
+    # This optimal benchmark is around 15% faster than complete code
+    # Compensated with the <overspeed> value
+    overspeed = 1.15
+
+    tmp_list = list(hashlib.algorithms_available)
+    tmp_list.sort()  # sorts normally by alphabetical order
+    tmp_list.sort(key=len)  # sorts by length
+
+    print(" >>> Benchmark <<<")
+    print(" When using an unsalted hashlist, the amount of hashes")
+    print(" act like a multiplier for the hash rate!\n")
+    time.sleep(2.0)
+    print(" Hash-Type   |  KH/s  |  GH/s (100000 unsalted hashes)\n")
+    try:
+        for hash_type in tmp_list:
+            start_time = time.time()
+            for i in range(200000):
+                if(hash_type != "shake_128" and hash_type != "shake_256"):
+                    act_hash_hex = hashlib.new(hash_type,
+                                               "ehthncgacialik"
+                                               .encode()).hexdigest()
+                else:
+                    act_hash_hex = hashlib.new(hash_type,
+                                               "ehthncgacialik"
+                                               .encode()).digest(15)
+
+            elapsed_time_fl = (time.time() - start_time)
+
+            kilo_hash_per_sec = (2e5/elapsed_time_fl) / (1000*overspeed)
+            giga_hash_per_sec = kilo_hash_per_sec / 11.2
+            print(" {:<12}".format(hash_type) +
+                  ("|  {:.1f} ".format(kilo_hash_per_sec)) +
+                  ("|  {:.2f}".format(giga_hash_per_sec)))
+            print("")
+    except:
+        sys.exit()
 
 
 def attack_wordlist(attack_config,
@@ -320,8 +359,7 @@ def attack_mask(attack_config,
     start_time = time.time()
 
     count_val = calc_count_val(hash_salt_pair_list)
-    print(count_val)
-    time.sleep(5)
+
     # Mask Attack
     if increment == 0:
         max_mask_length = len(charset_list)
@@ -367,7 +405,7 @@ def attack_mask(attack_config,
                 hash_per_sec = int(len(hash_salt_pair_set) *
                                    count_val/elapsed_time_fl)
 
-                lock.acquire()  # ########################################
+                lock.acquire()
                 mpa_hash_per_sec[id] = hash_per_sec
                 # If fixed mask we can describe it as a long wordlist
                 if increment == 0:
@@ -394,7 +432,7 @@ def attack_mask(attack_config,
                     if(len(hash_salt_pair_set) == 0):
                         mpa_done[id] = True
                         done = True
-                lock.release()  # ########################################
+                lock.release()
 
                 if done:
                     break
@@ -691,6 +729,7 @@ def print_options(msg):
  -n, --no-info       |      | print only found hash:[salt:]candidate pair
  -e, --exampes       |      | print some examples
  -o, --output-file   | Str  | output file to store found hashes
+ -b, --benchmark     |      | benchmark to test performance of hash types
  """ % sys.argv[0])
     return
 
@@ -889,7 +928,7 @@ def main(argv):
     parser.add_argument('-n', '--no-info', action='store_true')
     parser.add_argument('-e', '--examples', action='store_true')
     parser.add_argument('-o', '--output-file')
-
+    parser.add_argument('-b', '--benchmark', action='store_true')
     args = parser.parse_args()
 
     if args.help is True:
@@ -897,6 +936,9 @@ def main(argv):
         sys.exit()
     if args.examples is True:
         print_examples()
+        sys.exit()
+    if args.benchmark is True:
+        simple_bench()
         sys.exit()
 
     hash_mode = args.mode
@@ -1009,7 +1051,7 @@ def main(argv):
                 hash_salt_pair.append("")
                 hash_salt_pair_list.append(hash_salt_pair)
             counter += 1
-            if(counter > 1000000):
+            if(counter > 1e6):
                 print("Not more than 1000000 hashes at one time!")
                 break
             line = f.readline()
