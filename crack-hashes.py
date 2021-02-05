@@ -45,12 +45,13 @@ class AttackConfig(object):
     use_postfix = False
     no_info = False
     increment = 0
+    no_salt = False
 
     # The class "constructor" - It's actually an initializer
     def __init__(self, id, hash_salt_pair_list, wordlist,
                  hashlib_type_str, charset_list,
                  output_file, use_postfix,
-                 no_info, increment):
+                 no_info, increment, no_salt):
         self.id = id
         self.hash_salt_pair_list = hash_salt_pair_list
         self.wordlist = wordlist
@@ -60,6 +61,7 @@ class AttackConfig(object):
         self.use_postfix = use_postfix
         self.no_info = no_info
         self.increment = increment
+        self.no_salt = no_salt
 
 
 def signal_handler(signal, frame):
@@ -80,10 +82,16 @@ def animate(mpa_hash_per_sec, mpa_done, mpv_hashes_found_list,
         if done or all(mpa_done):
             break
 
-        hash_per_sec_str = "KH/s: "
+        if mpa_hash_per_sec[0] > 1000000000:
+            hash_per_sec_str = "MH/s: "
+        else:
+            hash_per_sec_str = "KH/s: "
         wl_perc_str = ""
         for i in range(len(mpa_hash_per_sec)):
-            khps = mpa_hash_per_sec[i]/1000
+            if mpa_hash_per_sec[i] > 1000000000:
+                khps = mpa_hash_per_sec[i]/1000000
+            else:
+                khps = mpa_hash_per_sec[i]/1000
             hash_per_sec_str = (hash_per_sec_str +
                                 "{:.0f}".format(khps) + " | ")
             if mpa_line_count[0] != 0:
@@ -111,8 +119,12 @@ def calc_count_val(lst):
     for i in lst:
         if i[1] != "":
             salts_count += 1
+    # If no salt, we use a very fast method so we need
+    # to handle the count differently
     if salts_count == 0:
         salts_count = 1
+        return magic
+
     salts_percent = int(salts_count * 100 / len(lst))
     if salts_percent == 0:
         salts_percent = 1
@@ -149,6 +161,7 @@ def attack_wordlist(attack_config,
     hashlib_type_str = attack_config.hashlib_type_str
     no_info = attack_config.no_info
     output_file = attack_config.output_file
+    no_salt = attack_config.no_salt
 
     start_time = time.time()
 
@@ -202,45 +215,68 @@ def attack_wordlist(attack_config,
         rehash = True
         last_salt = None
 
-        for hash_set_element in hash_salt_pair_set:
+        if no_salt:
+            act_hash_hex = hashlib.new(hashlib_type_str,
+                                       line_stripped
+                                       .encode()).hexdigest()
 
-            if rehash or last_salt is not hash_set_element[1]:
+            act_hash_tup = (act_hash_hex, "")
 
-                if not use_postfix:
-                    wordlist_line = (hash_set_element[1])+line_stripped
-                else:
-                    wordlist_line = line_stripped+hash_set_element[1]
-
-                act_hash_hex = hashlib.new(hashlib_type_str,
-                                           wordlist_line
-                                           .encode()).hexdigest()
-                rehash = False
-                last_salt = hash_set_element[1]
-
-            if(hash_set_element[0] == act_hash_hex):
-
+            if act_hash_tup in hash_salt_pair_set:
                 lock.acquire()
-                mpl_found_pair.append(hash_set_element)
-                write_potfile(output_file,
-                              hash_set_element,
-                              line_stripped)
+                # Add hash to global found list
+                mpl_found_pair.append(act_hash_tup)
                 lock.release()
+                write_potfile(output_file,
+                              act_hash_tup,
+                              line_stripped)
 
                 print_found_info(id, act_hash_hex,
-                                 (hash_set_element[1] + ":" +
+                                 (act_hash_tup[1] + ":" +
                                   line_stripped),
                                  worker_passes+tmp_passes,
                                  no_info)
 
-                set_el_to_discard.add(hash_set_element)
-                set_size_changed = True
+        else:
+            for hash_set_element in hash_salt_pair_set:
 
-                if(len(hash_salt_pair_set) == 0):
-                    done = True
+                if rehash or last_salt is not hash_set_element[1]:
+
+                    if not use_postfix:
+                        wordlist_line = (hash_set_element[1])+line_stripped
+                    else:
+                        wordlist_line = line_stripped+hash_set_element[1]
+
+                    act_hash_hex = hashlib.new(hashlib_type_str,
+                                               wordlist_line
+                                               .encode()).hexdigest()
+                    rehash = False
+                    last_salt = hash_set_element[1]
+
+                if(hash_set_element[0] == act_hash_hex):
+
+                    mpl_found_pair.append(hash_set_element)
                     lock.acquire()
-                    mpa_done[id] = True
                     lock.release()
-                    break
+                    write_potfile(output_file,
+                                  hash_set_element,
+                                  line_stripped)
+
+                    print_found_info(id, act_hash_hex,
+                                     (hash_set_element[1] + ":" +
+                                      line_stripped),
+                                     worker_passes+tmp_passes,
+                                     no_info)
+
+                    set_el_to_discard.add(hash_set_element)
+                    set_size_changed = True
+
+                    if(len(hash_salt_pair_set) == 0):
+                        done = True
+                        lock.acquire()
+                        mpa_done[id] = True
+                        lock.release()
+                        break
 
         # use realine() to read next line
         try:
@@ -279,11 +315,13 @@ def attack_mask(attack_config,
     no_info = attack_config.no_info
     increment = attack_config.increment
     output_file = attack_config.output_file
+    no_salt = attack_config.no_salt
 
     start_time = time.time()
 
     count_val = calc_count_val(hash_salt_pair_list)
-
+    print(count_val)
+    time.sleep(5)
     # Mask Attack
     if increment == 0:
         max_mask_length = len(charset_list)
@@ -338,33 +376,24 @@ def attack_mask(attack_config,
                 # Following code looks for hash:salt pairs in found list
                 # and removes them in the working set
                 # but only if new hashes has been added to found list
+
+                # This approach is very fast!
                 if(len(mpl_found_pair) > last_found_list_length):
-                    temp = []
-                    while hash_salt_pair_set:
-                        found = False
-                        x = hash_salt_pair_set.pop()
+                    for j in range(last_found_list_length,
+                                   len(mpl_found_pair)):
 
-                        for j in range(last_found_list_length,
-                                       len(mpl_found_pair)):
-                            if x == mpl_found_pair[j]:
-                                found = True
-                                break
+                        if mpl_found_pair[j] in hash_salt_pair_set:
+                            hash_salt_pair_set.discard(mpl_found_pair[j])
 
-                        if not found:
-                            temp.append(x)
-
-                    while temp:
-                        hash_salt_pair_set.add(temp.pop())
-
-                    # if not no_info:
-                        # print("\nSet Length of P%i is: %i"
-                              # % (id, len(hash_salt_pair_set)))
+                    if not no_info:
+                        print("\nSet Length of P%i is: %i"
+                              % (id, len(hash_salt_pair_set)))
 
                     last_found_list_length = len(mpl_found_pair)
 
-                if(len(hash_salt_pair_set) == 0):
-                    mpa_done[id] = True
-                    done = True
+                    if(len(hash_salt_pair_set) == 0):
+                        mpa_done[id] = True
+                        done = True
                 lock.release()  # ########################################
 
                 if done:
@@ -374,37 +403,60 @@ def attack_mask(attack_config,
             act_hash_hex = ""
             last_salt = ""
 
-            for hash_set_element in hash_salt_pair_set:
+            if no_salt:
+                act_hash_hex = hashlib.new(hashlib_type_str,
+                                           saved
+                                           .encode()).hexdigest()
 
-                if rehash or last_salt is not hash_set_element[1]:
+                act_hash_tup = (act_hash_hex, "")
 
-                    if not use_postfix:
-                        brute_force_string = hash_set_element[1]+saved
-                        # bfs = "%s%s" % (hse[1],saved) is slower!
-                    else:
-                        brute_force_string = saved+hash_set_element[1]
-
-                    act_hash_hex = hashlib.new(hashlib_type_str,
-                                               brute_force_string
-                                               .encode()).hexdigest()
-                    rehash = False
-                    last_salt = hash_set_element[1]
-
-                if(hash_set_element[0] == act_hash_hex):
-
+                if act_hash_tup in hash_salt_pair_set:
                     lock.acquire()
                     # Add hash to global found list
-                    mpl_found_pair.append(hash_set_element)
-                    write_potfile(output_file,
-                                  hash_set_element,
-                                  saved)
+                    mpl_found_pair.append(act_hash_tup)
                     lock.release()
+                    write_potfile(output_file,
+                                  act_hash_tup,
+                                  saved)
 
                     print_found_info(id, act_hash_hex,
-                                     (hash_set_element[1] + ":" +
+                                     (act_hash_tup[1] + ":" +
                                       saved),
                                      worker_passes+tmp_passes,
                                      no_info)
+
+            else:
+                for hash_set_element in hash_salt_pair_set:
+
+                    if rehash or last_salt is not hash_set_element[1]:
+
+                        if not use_postfix:
+                            brute_force_string = hash_set_element[1]+saved
+                            # bfs = "%s%s" % (hse[1],saved) is slower!
+                        else:
+                            brute_force_string = saved+hash_set_element[1]
+
+                        act_hash_hex = hashlib.new(hashlib_type_str,
+                                                   brute_force_string
+                                                   .encode()).hexdigest()
+                        rehash = False
+                        last_salt = hash_set_element[1]
+
+                    if(hash_set_element[0] == act_hash_hex):
+
+                        lock.acquire()
+                        # Add hash to global found list
+                        mpl_found_pair.append(hash_set_element)
+                        lock.release()
+                        write_potfile(output_file,
+                                      hash_set_element,
+                                      saved)
+
+                        print_found_info(id, act_hash_hex,
+                                         (hash_set_element[1] + ":" +
+                                          saved),
+                                         worker_passes+tmp_passes,
+                                         no_info)
 
 
 def write_potfile(file, lst, candidate):
@@ -810,6 +862,7 @@ def main(argv):
     total_passes = 0
     worker_count = 1
     wordlist_length = 0
+    no_salt = True
 
     if not len(argv) > 0:
         print_usage()
@@ -937,7 +990,7 @@ def main(argv):
         sys.exit()
 
     # Test if hash is a hash-file or a single hash
-    # If it is a file read max. 10000 lines of hashes and salts
+    # If it is a file read max. 100000 lines of hashes and salts
     # into hash_salt_pair_list
     if os.path.isfile(args.hash):
         if not no_info:
@@ -945,20 +998,27 @@ def main(argv):
         f = open(args.hash)
         line = f.readline()
         counter = 0
+        salt_counter = 0
         while line:
             hash_salt_pair = line.strip().split(":")
 
             if len(hash_salt_pair) == 2:
                 hash_salt_pair_list.append(hash_salt_pair)
+                salt_counter += 1
             elif len(hash_salt_pair) == 1:
                 hash_salt_pair.append("")
                 hash_salt_pair_list.append(hash_salt_pair)
             counter += 1
-            if(counter > 10000):
-                print("Not more than 10000 hashes at one time!")
+            if(counter > 1000000):
+                print("Not more than 1000000 hashes at one time!")
                 break
             line = f.readline()
         f.close()
+        if salt_counter > 10000:
+            print("Not more than 10000 salted hashes! It will take ages")
+            sys.exit()
+        if salt_counter != 0:
+            no_salt = False
 
     # If it is a single hash or hash:salt pair, only add this to the list
     else:
@@ -971,6 +1031,7 @@ def main(argv):
 
         if len(hash_salt_pair) == 2:
             hash_salt_pair_list.append(hash_salt_pair)
+            no_salt = False
         elif len(hash_salt_pair) == 1:
             hash_salt_pair.append("")
             hash_salt_pair_list.append(hash_salt_pair)
@@ -1018,7 +1079,7 @@ def main(argv):
     # Create "lock", "manager" and "managed elements" for multiprocessing
     lock = multiprocessing.Lock()
     manager = multiprocessing.Manager()
-    mpa_hash_per_sec = manager.Array('i', range(worker_count))
+    mpa_hash_per_sec = manager.Array('l', range(worker_count))
     mpl_found_pair = manager.list()
     mpa_done = manager.Array('i', [0] * int(worker_count))
     mpa_line_count = manager.Array('i', [0] * int(worker_count))
@@ -1069,7 +1130,7 @@ def main(argv):
                                      args.wordlist, hashlib_type_str,
                                      charset_list, output_file,
                                      use_postfix, no_info,
-                                     increment)
+                                     increment, no_salt)
         if attack_mode == 0:
             p = Process(target=attack_wordlist, args=(attack_config,
                                                       mpa_hash_per_sec,
