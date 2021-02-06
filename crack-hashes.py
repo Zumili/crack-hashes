@@ -75,23 +75,23 @@ def signal_handler(signal, frame):
     sys.exit(0)
 
 
-def animate(mpa_hash_per_sec, mpa_done, mpv_hashes_found_list,
+def animate(mpa_khash_per_sec, mpa_done, mpv_hashes_found_list,
             hashes_count, mpa_line_count, wl_length):
 
     for c in itertools.cycle(['|', '/', '-', '\\']):
         if done or all(mpa_done):
             break
 
-        if mpa_hash_per_sec[0] > 1e9:
+        if mpa_khash_per_sec[0] > 1e6:
             hash_per_sec_str = "MH/s: "
         else:
             hash_per_sec_str = "KH/s: "
         wl_perc_str = ""
-        for i in range(len(mpa_hash_per_sec)):
-            if mpa_hash_per_sec[i] > 1e9:
-                khps = mpa_hash_per_sec[i]/1e6
+        for i in range(len(mpa_khash_per_sec)):
+            if mpa_khash_per_sec[i] > 1e6:
+                khps = mpa_khash_per_sec[i]/1e3
             else:
-                khps = mpa_hash_per_sec[i]/1000
+                khps = mpa_khash_per_sec[i]
             hash_per_sec_str = (hash_per_sec_str +
                                 "{:.0f}".format(khps) + " | ")
             if mpa_line_count[0] != 0:
@@ -179,14 +179,14 @@ def simple_bench():
 
 
 def attack_wordlist(attack_config,
-                    mpa_hash_per_sec,
+                    mpa_khash_per_sec,
                     mpl_found_pair,
                     mpa_done,
                     mpa_line_count,
                     lock):
 
     done = False
-    hash_per_sec = 0
+    kilo_hash_per_sec = 0
     worker_passes = 0
     tmp_passes = 0
     skipped = 0
@@ -234,11 +234,11 @@ def attack_wordlist(attack_config,
 
             elapsed_time_fl = (time.time() - start_time)
             start_time = time.time()
-            hash_per_sec = int(len(hash_salt_pair_set) *
-                               count_val/elapsed_time_fl)
+            kilo_hash_per_sec = int((len(hash_salt_pair_set) *
+                                    count_val/elapsed_time_fl) / 1000)
 
             lock.acquire()
-            mpa_hash_per_sec[id] = hash_per_sec
+            mpa_khash_per_sec[id] = kilo_hash_per_sec
             mpa_line_count[id] = worker_passes
             lock.release()
 
@@ -329,14 +329,14 @@ def attack_wordlist(attack_config,
 
 
 def attack_mask(attack_config,
-                mpa_hash_per_sec,
+                mpa_khash_per_sec,
                 mpl_found_pair,
                 mpa_done,
                 mpa_line_count,
                 lock):
 
     done = False
-    hash_per_sec = 0
+    kilo_hash_per_sec = 0
     worker_passes = 0
     tmp_passes = 0
     brute_force_string = ""
@@ -402,11 +402,12 @@ def attack_mask(attack_config,
 
                 elapsed_time_fl = (time.time() - start_time)
                 start_time = time.time()
-                hash_per_sec = int(len(hash_salt_pair_set) *
-                                   count_val/elapsed_time_fl)
+                kilo_hash_per_sec = int((len(hash_salt_pair_set) *
+                                        count_val/elapsed_time_fl) /
+                                        1000)
 
                 lock.acquire()
-                mpa_hash_per_sec[id] = hash_per_sec
+                mpa_khash_per_sec[id] = kilo_hash_per_sec
                 # If fixed mask we can describe it as a long wordlist
                 if increment == 0:
                     mpa_line_count[id] = worker_passes
@@ -876,17 +877,36 @@ def print_examples():
 
 def get_file_length(file, mode=0):
 
-    count = 0
-    if mode == 0:
-        thefile = open(file, 'rb')
-        while 1:
-            buffer = thefile.read(8192*1024)
-            if not buffer:
-                break
-            count += buffer.count(b'\n')
-        thefile.close()
+    line_count = 0
+    block_count = 0
+    try:
+        file_size = os.path.getsize(file)
+    except:
+        return None
+    if file_size > 4e9:
+        print("Huge Wordlist! This will take a while")
+    chunks = file_size / (8192*1024)
+    if chunks < 1:
+        chunks = 1
 
-    return count
+    if mode == 0:
+
+        fd = open(file, 'rb')
+        try:
+            while 1:
+                block_count += 1
+                buffer = fd.read(8192*1024)
+                if not buffer:
+                    break
+                line_count += buffer.count(b'\n')
+                percent = block_count*100/chunks
+                sys.stdout.write('\r ' + "{:.2f}%".format(percent))
+                sys.stdout.flush()
+            fd.close()
+        except:
+            sys.exit()
+
+    return line_count
 
 
 def main(argv):
@@ -1121,7 +1141,7 @@ def main(argv):
     # Create "lock", "manager" and "managed elements" for multiprocessing
     lock = multiprocessing.Lock()
     manager = multiprocessing.Manager()
-    mpa_hash_per_sec = manager.Array('l', range(worker_count))
+    mpa_khash_per_sec = manager.Array('l', range(worker_count))
     mpl_found_pair = manager.list()
     mpa_done = manager.Array('i', [0] * int(worker_count))
     mpa_line_count = manager.Array('i', [0] * int(worker_count))
@@ -1175,14 +1195,14 @@ def main(argv):
                                      increment, no_salt)
         if attack_mode == 0:
             p = Process(target=attack_wordlist, args=(attack_config,
-                                                      mpa_hash_per_sec,
+                                                      mpa_khash_per_sec,
                                                       mpl_found_pair,
                                                       mpa_done,
                                                       mpa_line_count,
                                                       lock))
         else:
             p = Process(target=attack_mask, args=(attack_config,
-                                                  mpa_hash_per_sec,
+                                                  mpa_khash_per_sec,
                                                   mpl_found_pair,
                                                   mpa_done,
                                                   mpa_line_count,
@@ -1200,7 +1220,7 @@ def main(argv):
     if no_info is False:
 
         t = threading.Thread(target=animate,
-                             args=(mpa_hash_per_sec,
+                             args=(mpa_khash_per_sec,
                                    mpa_done,
                                    mpl_found_pair,
                                    len(hash_salt_pair_list),
